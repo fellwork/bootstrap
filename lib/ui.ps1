@@ -149,3 +149,97 @@ function ConvertFrom-Hsv {
         [int](($b + $m) * 255)
     )
 }
+
+function Format-Section {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [int]$Width = 60,
+        [hashtable]$Glyphs,
+        [bool]$Enabled = $true
+    )
+    if (-not $Glyphs) { $Glyphs = Get-Glyphs -Utf8 $true }
+    $rule = $Glyphs.RuleLight
+    $padded = "  $Title  "
+    $sideRule = $rule * 5
+    $line = "$sideRule$padded$sideRule"
+    if ($Enabled) {
+        return Format-Color -Text $line -Color Cyan -Enabled $true
+    }
+    return $line
+}
+
+function Format-TreeLine {
+    param(
+        [Parameter(Mandatory)][hashtable]$Glyphs,
+        [bool]$IsLast = $false,
+        [int]$Indent = 0,
+        [Parameter(Mandatory)][string]$Text
+    )
+    $prefix = ""
+    for ($i = 0; $i -lt $Indent; $i++) {
+        $prefix += "$($Glyphs.TreeBar) "
+    }
+    $branch = if ($IsLast) { $Glyphs.TreeEnd } else { $Glyphs.TreeMid }
+    return "$prefix$branch $Text"
+}
+
+function Format-Banner {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [string]$Subtitle = "",
+        [int]$Width = 60,
+        [hashtable]$Glyphs,
+        [bool]$Enabled = $true
+    )
+    if (-not $Glyphs) { $Glyphs = Get-Glyphs -Utf8 $true }
+    $rule = $Glyphs.RuleHeavy * $Width
+    $titleLine = "  $Title".PadRight($Width - $Subtitle.Length) + $Subtitle
+    $colored = if ($Enabled) {
+        $rule = Format-Color -Text $rule -Color Cyan -Enabled $true
+        $titleLine = Format-Color -Text $titleLine -Color White -Enabled $true -Bold $true
+        @($rule, $titleLine, $rule) -join "`n"
+    } else {
+        @($rule, $titleLine, $rule) -join "`n"
+    }
+    return $colored
+}
+
+function Format-SideBox {
+    param(
+        [Parameter(Mandatory)][string]$Emoji,
+        [Parameter(Mandatory)][string]$Text,
+        [int]$MaxWidth = 32,
+        [hashtable]$Glyphs
+    )
+    if (-not $Glyphs) { $Glyphs = Get-Glyphs -Utf8 $true }
+
+    # Wrap text to fit MaxWidth - 6 (for emoji + padding + borders)
+    $wrapWidth = $MaxWidth - 6
+    $words = $Text -split '\s+'
+    $lines = @()
+    $current = ""
+    foreach ($w in $words) {
+        if (($current.Length + $w.Length + 1) -le $wrapWidth) {
+            $current = if ($current) { "$current $w" } else { $w }
+        } else {
+            $lines += $current
+            $current = $w
+        }
+    }
+    if ($current) { $lines += $current }
+
+    # Build the box
+    $boxWidth = $MaxWidth
+    $top    = $Glyphs.BoxTL + ($Glyphs.BoxH * ($boxWidth - 2)) + $Glyphs.BoxTR
+    $bottom = $Glyphs.BoxBL + ($Glyphs.BoxH * ($boxWidth - 2)) + $Glyphs.BoxBR
+
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine($top)
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $prefix = if ($i -eq 0) { "$Emoji  " } else { "    " }
+        $content = "$prefix$($lines[$i])".PadRight($boxWidth - 4)
+        [void]$sb.AppendLine("$($Glyphs.BoxV) $content $($Glyphs.BoxV)")
+    }
+    [void]$sb.Append($bottom)
+    return $sb.ToString()
+}

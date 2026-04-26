@@ -44,6 +44,31 @@ Assert-Equal $true ($colored.Contains("hello")) "Format-Color preserves text whe
 $plain = Format-Color -Text "hello" -Color Green -Enabled $false
 Assert-Equal "hello" $plain "Format-Color returns plain text when disabled"
 
+
+# Section header
+$section = Format-Section -Title "Cloning repositories" -Width 60 -Glyphs (Get-Glyphs -Utf8 $true) -Enabled $false
+Assert-Equal $true ($section.Contains("Cloning repositories")) "section contains title"
+Assert-Equal $true ($section.Contains("─")) "section uses light rule"
+
+# Tree line: middle item
+$treeMid = Format-TreeLine -Glyphs (Get-Glyphs -Utf8 $true) -IsLast $false -Indent 0 -Text "✓ done"
+Assert-Equal "├─ ✓ done" $treeMid "tree middle line"
+
+# Tree line: last item
+$treeEnd = Format-TreeLine -Glyphs (Get-Glyphs -Utf8 $true) -IsLast $true -Indent 0 -Text "✓ done"
+Assert-Equal "└─ ✓ done" $treeEnd "tree end line"
+
+# Tree line: indented under bar
+$treeIndent = Format-TreeLine -Glyphs (Get-Glyphs -Utf8 $true) -IsLast $false -Indent 1 -Text "child"
+Assert-Equal "│  ├─ child" $treeIndent "tree indented middle"
+
+# Side box: emoji + text wrapped in rounded box
+$box = Format-SideBox -Emoji "🦊" -Text "this is the rust monorepo" -Glyphs (Get-Glyphs -Utf8 $true)
+Assert-Equal $true ($box.Contains("🦊")) "side box contains emoji"
+Assert-Equal $true ($box.Contains("rust monorepo")) "side box contains text"
+Assert-Equal $true ($box.Contains("╭")) "side box uses rounded corner"
+Assert-Equal $true ($box.Contains("╰")) "side box uses rounded bottom"
+
 if ($failures -eq 0) {
     Write-Host "`nAll UI tests passed." -ForegroundColor Green
     exit 0
