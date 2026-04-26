@@ -1,0 +1,3 @@
+🦝  Repo points to wrong origin
+    git remote set-url origin https://github.com/example/foo.git
+    Then rerun ./bootstrap.ps1.

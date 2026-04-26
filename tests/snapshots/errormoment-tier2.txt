@@ -1,0 +1,12 @@
+XXXXXXX
+YYYYYYY
+ZZZZZZZ
+
+╭────────────────────────────────────────────────╮
+│ Test tier-2                                    │
+│                                                │
+│   do thing                                     │
+│                                                │
+│ Then rerun ./bootstrap.ps1 — I'll pick up where I left off. │
+╰────────────────────────────────────────────────╯
+                                                       — 🦝
