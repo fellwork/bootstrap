@@ -5,6 +5,11 @@ $ErrorActionPreference = 'Stop'
 $sourceDir = "$PSScriptRoot/sources"
 $outputDir = $PSScriptRoot
 
+# Force UTF-8 on the chafa stdout pipe so half-block characters (▀ ▌) survive
+# as their actual Unicode bytes instead of getting mangled through CP1252.
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
 if (-not (Get-Command chafa -ErrorAction SilentlyContinue)) {
     Write-Host "chafa not installed. Install it first:" -ForegroundColor Red
     Write-Host "  scoop install chafa" -ForegroundColor Yellow
@@ -16,6 +21,7 @@ if (-not (Get-Command chafa -ErrorAction SilentlyContinue)) {
 $animals = @('raccoon', 'hedgehog', 'octopus', 'owl', 'fox', 'turtle')
 $generated = 0
 $skipped = 0
+$noBomUtf8 = [System.Text.UTF8Encoding]::new($false)
 
 foreach ($name in $animals) {
     $src = Join-Path $sourceDir "$name.png"
@@ -33,7 +39,8 @@ foreach ($name in $animals) {
 
 "@
     $art = & chafa --size 30x20 --symbols half --colors 256 --animate=off --polite=on $src
-    Set-Content -Path $dst -Value ($header + ($art -join "`n")) -Encoding UTF8
+    $content = $header + ($art -join "`n") + "`n"
+    [System.IO.File]::WriteAllText($dst, $content, $noBomUtf8)
     $generated++
 }
 
