@@ -113,10 +113,12 @@ $env:NO_COLOR = $savedNoColor
 $plain = Format-Color -Text "hi" -Color "NotARealColor" -Enabled $true
 Assert-Equal "hi" $plain "Format-Color with unknown color returns plain text"
 
-# Empty text - PowerShell rejects empty mandatory string params; verify it throws
-$emptyThrew = $false
-try { $null = Format-Color -Text "" -Color "Green" -Enabled $true } catch { $emptyThrew = $true }
-Assert-True $emptyThrew "Format-Color with empty text raises parameter error (mandatory param)"
+# Empty text is allowed (AllowEmptyString attribute) — function returns the
+# empty string wrapped in ANSI escape codes (or plain "" if disabled).
+$empty = Format-Color -Text "" -Color "Green" -Enabled $true
+Assert-True ($empty -is [string]) "Format-Color with empty text returns string (no crash)"
+$emptyDisabled = Format-Color -Text "" -Color "Green" -Enabled $false
+Assert-Equal "" $emptyDisabled "Format-Color empty + disabled returns empty string"
 
 # Bold flag adds 1; prefix to escape
 $bold = Format-Color -Text "x" -Color "Green" -Enabled $true -Bold $true
@@ -126,10 +128,9 @@ $notBold = Format-Color -Text "x" -Color "Green" -Enabled $true -Bold $false
 Assert-True (-not ($notBold -match "1;38;2;")) "Format-Color -Bold `$false omits 1; prefix"
 
 # D. Format-RainbowText edge cases
-# Empty string — mandatory param rejects empty strings; verify it throws
-$rainbowEmptyThrew = $false
-try { $null = Format-RainbowText -Text "" -Enabled $true } catch { $rainbowEmptyThrew = $true }
-Assert-True $rainbowEmptyThrew "Format-RainbowText empty input raises parameter error (mandatory param)"
+# Empty string is allowed (AllowEmptyString attribute)
+$rainbowEmpty = Format-RainbowText -Text "" -Enabled $true
+Assert-True ($rainbowEmpty -is [string]) "Format-RainbowText empty input returns string (no crash)"
 
 # Disabled returns plain text unchanged
 $plain = Format-RainbowText -Text "rainbow" -Enabled $false
@@ -144,6 +145,11 @@ Assert-True ($frame0 -ne $frame180) "Format-RainbowText with different FrameOffs
 $section = Format-Section -Title "Test" -Width 60 -Glyphs (Get-Glyphs -Utf8 $true) -Enabled $false
 Assert-True ($section.Length -ge 14) "section length is at least title+padding"
 Assert-True ($section.Contains("Test")) "section contains title text"
+
+# Section honors Width parameter — wider request → longer rendered line
+$narrow = Format-Section -Title "X" -Width 30 -Glyphs (Get-Glyphs -Utf8 $true) -Enabled $false
+$wide   = Format-Section -Title "X" -Width 80 -Glyphs (Get-Glyphs -Utf8 $true) -Enabled $false
+Assert-True ($wide.Length -gt $narrow.Length) "Format-Section -Width 80 produces longer line than -Width 30"
 
 # Section with ASCII glyphs uses dashes not unicode rules
 $asciiSection = Format-Section -Title "Test" -Width 60 -Glyphs (Get-Glyphs -Utf8 $false) -Enabled $false
@@ -161,20 +167,16 @@ Assert-True ($strippedAnsi.Contains("nested")) "deep indent contains text"
 $flat = Format-TreeLine -Glyphs (Get-Glyphs -Utf8 $true) -IsLast $false -Indent 0 -Text "flat"
 Assert-True (-not $flat.Contains("│")) "indent 0 has no vertical bar prefix"
 
-# G. Format-SideBox — content rows all have the same width
-# Note: the bottom line uses Append (no trailing newline) while content lines use AppendLine,
-# so the bottom row is 1 char shorter than the rest. We test that content rows are uniform.
+# G. Format-SideBox — ALL rows (top, content, bottom) have the same visible width
 $box = Format-SideBox -Emoji "🦊" -Text "short" -MaxWidth 30 -Glyphs (Get-Glyphs -Utf8 $true)
 $lines = $box -split "`n" | Where-Object { $_.Length -gt 0 }
-# Top and content rows (all but the last) come from AppendLine and should share the same width
-$innerLines = $lines | Select-Object -SkipLast 1
-$innerWidths = $innerLines | ForEach-Object { $_.Length }
-$firstInnerWidth = $innerWidths[0]
-$innerAllSame = $true
-foreach ($w in $innerWidths) {
-    if ($w -ne $firstInnerWidth) { $innerAllSame = $false; break }
+$widths = $lines | ForEach-Object { $_.Length }
+$firstWidth = $widths[0]
+$allSame = $true
+foreach ($w in $widths) {
+    if ($w -ne $firstWidth) { $allSame = $false; break }
 }
-Assert-Equal $true $innerAllSame "Format-SideBox top+content rows all have equal width"
+Assert-Equal $true $allSame "Format-SideBox all rows (top + content + bottom) have equal width"
 
 # H. Format-SideBox text wrapping
 $longText = "This is a much longer commentary that should wrap to multiple lines inside the box"

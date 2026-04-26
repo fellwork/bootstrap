@@ -99,7 +99,7 @@ $script:Colors = @{
 
 function Format-Color {
     param(
-        [Parameter(Mandatory)][string]$Text,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
         [Parameter(Mandatory)][string]$Color,
         [bool]$Enabled = $true,
         [bool]$Bold = $false
@@ -114,7 +114,7 @@ function Format-Color {
 function Format-RainbowText {
     # Cycle hue across each character. For shimmer use, frame parameter offsets the start hue.
     param(
-        [Parameter(Mandatory)][string]$Text,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
         [int]$FrameOffset = 0,
         [bool]$Enabled = $true
     )
@@ -160,7 +160,11 @@ function Format-Section {
     if (-not $Glyphs) { $Glyphs = Get-Glyphs -Utf8 $true }
     $rule = $Glyphs.RuleLight
     $padded = "  $Title  "
-    $sideRule = $rule * 5
+    # Center the title block within $Width by computing side-rule lengths from
+    # what's left after the padded title. Minimum of 5 chars per side.
+    $remaining = $Width - $padded.Length
+    $sideLen = [Math]::Max(5, [int]($remaining / 2))
+    $sideRule = $rule * $sideLen
     $line = "$sideRule$padded$sideRule"
     if ($Enabled) {
         return Format-Color -Text $line -Color Cyan -Enabled $true
@@ -233,12 +237,17 @@ function Format-SideBox {
     $top    = $Glyphs.BoxTL + ($Glyphs.BoxH * ($boxWidth - 2)) + $Glyphs.BoxTR
     $bottom = $Glyphs.BoxBL + ($Glyphs.BoxH * ($boxWidth - 2)) + $Glyphs.BoxBR
 
+    # Use explicit "`n" line breaks (not AppendLine which adds "`r`n" on Windows)
+    # so every row has the same trailing-character behavior. Mixing AppendLine
+    # for content rows + Append for the final row caused width inconsistency.
     $sb = [System.Text.StringBuilder]::new()
-    [void]$sb.AppendLine($top)
+    [void]$sb.Append($top)
+    [void]$sb.Append("`n")
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $prefix = if ($i -eq 0) { "$Emoji  " } else { "    " }
         $content = "$prefix$($lines[$i])".PadRight($boxWidth - 4)
-        [void]$sb.AppendLine("$($Glyphs.BoxV) $content $($Glyphs.BoxV)")
+        [void]$sb.Append("$($Glyphs.BoxV) $content $($Glyphs.BoxV)")
+        [void]$sb.Append("`n")
     }
     [void]$sb.Append($bottom)
     return $sb.ToString()
