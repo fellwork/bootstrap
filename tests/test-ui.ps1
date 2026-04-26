@@ -72,9 +72,12 @@ $treeIndent = Format-TreeLine -Glyphs (Get-Glyphs -Utf8 $true) -IsLast $false -I
 Assert-Equal "│  ├─ child" $treeIndent "tree indented middle"
 
 # Side box: emoji + text wrapped in rounded box
+# Note: long text may wrap across lines, so we check for individual words rather
+# than the full phrase. The wrap width depends on MaxWidth and the emoji prefix.
 $box = Format-SideBox -Emoji "🦊" -Text "this is the rust monorepo" -Glyphs (Get-Glyphs -Utf8 $true)
 Assert-Equal $true ($box.Contains("🦊")) "side box contains emoji"
-Assert-Equal $true ($box.Contains("rust monorepo")) "side box contains text"
+Assert-Equal $true ($box.Contains("rust")) "side box contains 'rust'"
+Assert-Equal $true ($box.Contains("monorepo")) "side box contains 'monorepo'"
 Assert-Equal $true ($box.Contains("╭")) "side box uses rounded corner"
 Assert-Equal $true ($box.Contains("╰")) "side box uses rounded bottom"
 
