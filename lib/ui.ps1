@@ -243,3 +243,41 @@ function Format-SideBox {
     [void]$sb.Append($bottom)
     return $sb.ToString()
 }
+
+$script:SpinnerFrames = @('⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏')
+
+function Get-SpinnerFrame {
+    param([int]$Index)
+    return $script:SpinnerFrames[$Index % $script:SpinnerFrames.Count]
+}
+
+function Start-Spinner {
+    # Run a script block while showing a spinner; returns the script block's output.
+    param(
+        [Parameter(Mandatory)][scriptblock]$ScriptBlock,
+        [string]$Label = "working",
+        [bool]$Rainbow = $false,
+        [bool]$Enabled = $true
+    )
+    if (-not $Enabled -or [Console]::IsOutputRedirected) {
+        return & $ScriptBlock
+    }
+
+    $job = Start-Job -ScriptBlock $ScriptBlock
+    $i = 0
+    while ($job.State -eq 'Running') {
+        $frame = Get-SpinnerFrame -Index $i
+        $rendered = if ($Rainbow) {
+            Format-RainbowText -Text $frame -FrameOffset ($i * 30) -Enabled $true
+        } else {
+            Format-Color -Text $frame -Color Cyan -Enabled $true
+        }
+        Write-Host -NoNewline "`r$rendered $Label   "
+        Start-Sleep -Milliseconds 80
+        $i++
+    }
+    Write-Host -NoNewline "`r" + (' ' * ($Label.Length + 8)) + "`r"
+    $result = Receive-Job -Job $job -Wait
+    Remove-Job -Job $job
+    return $result
+}

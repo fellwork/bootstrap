@@ -69,6 +69,16 @@ Assert-Equal $true ($box.Contains("rust monorepo")) "side box contains text"
 Assert-Equal $true ($box.Contains("╭")) "side box uses rounded corner"
 Assert-Equal $true ($box.Contains("╰")) "side box uses rounded bottom"
 
+
+# Spinner frame: returns a single braille char from the cycle
+$frame0 = Get-SpinnerFrame -Index 0
+Assert-Equal "⠋" $frame0 "spinner frame 0"
+$frame5 = Get-SpinnerFrame -Index 5
+Assert-Equal "⠴" $frame5 "spinner frame 5"
+# Wraps
+$frame10 = Get-SpinnerFrame -Index 10
+Assert-Equal "⠋" $frame10 "spinner frame wraps"
+
 if ($failures -eq 0) {
     Write-Host "`nAll UI tests passed." -ForegroundColor Green
     exit 0
