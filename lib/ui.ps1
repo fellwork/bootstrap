@@ -217,8 +217,14 @@ function Format-SideBox {
     )
     if (-not $Glyphs) { $Glyphs = Get-Glyphs -Utf8 $true }
 
-    # Wrap text to fit MaxWidth - 6 (for emoji + padding + borders)
-    $wrapWidth = $MaxWidth - 6
+    # Compute prefix lengths so wrap budget is exact.
+    # Row layout: "│ {prefix}{text-padded} │" = 1+1+prefixLen+textLen+(pad)+1+1 = MaxWidth
+    # Therefore text must fit in (MaxWidth - 4 - prefixLen) chars.
+    $firstPrefix = "$Emoji  "
+    $contPrefix  = " " * $firstPrefix.Length
+    $wrapWidth = $MaxWidth - 4 - $firstPrefix.Length
+    if ($wrapWidth -lt 1) { $wrapWidth = 1 }
+
     $words = $Text -split '\s+'
     $lines = @()
     $current = ""
@@ -244,7 +250,7 @@ function Format-SideBox {
     [void]$sb.Append($top)
     [void]$sb.Append("`n")
     for ($i = 0; $i -lt $lines.Count; $i++) {
-        $prefix = if ($i -eq 0) { "$Emoji  " } else { "    " }
+        $prefix = if ($i -eq 0) { $firstPrefix } else { $contPrefix }
         $content = "$prefix$($lines[$i])".PadRight($boxWidth - 4)
         [void]$sb.Append("$($Glyphs.BoxV) $content $($Glyphs.BoxV)")
         [void]$sb.Append("`n")
