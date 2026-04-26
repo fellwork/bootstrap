@@ -188,6 +188,11 @@ function Format-AnimalErrorMoment {
     if (-not $Glyphs) { $Glyphs = Get-Glyphs -Utf8 $true }
     $emoji = $script:Registry[$Animal].Emoji
     $sprite = Read-AnimalSprite -Animal $Animal -RootDir $RootDir
+    # When color is disabled, strip ANSI escape codes from the pre-rendered
+    # sprite. The half-block characters still render as monochrome silhouette.
+    if (-not $Enabled -and $sprite) {
+        $sprite = $sprite -replace "`e\[[0-9;]*m", ""
+    }
     $spriteWidth = Get-SpriteWidth -Sprite $sprite
 
     # Speech-box content

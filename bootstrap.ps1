@@ -181,7 +181,13 @@ foreach ($p in $otherPrereqs) {
         Write-Host (Format-Color -Text "$($glyphs.Ok) $($p.Name.PadRight(12)) $($p.Version)" -Color Green -Enabled $colorOn)
     } elseif ($p.Status -eq 'present-but-not-running') {
         Write-Host (Format-Color -Text "$($glyphs.Warn) $($p.Name.PadRight(12)) installed but daemon not running" -Color Yellow -Enabled $colorOn)
-        $summary.Warnings += @{ Name = $p.Name; Reason = 'not running' }
+        $summary.Warnings += @{
+            Name       = $p.Name
+            Reason     = 'not running'
+            Title      = "$($p.Name) is installed but its daemon isn't running"
+            FixCommand = if ($p.Workaround) { $p.Workaround } else { "Start the $($p.Name) daemon (e.g. open Docker Desktop)" }
+            Animal     = 'fox'
+        }
     } else {
         Write-Host (Format-Color -Text "$($glyphs.Warn) $($p.Name.PadRight(12)) not found" -Color Yellow -Enabled $colorOn)
         if ($p.Workaround) {
@@ -189,7 +195,16 @@ foreach ($p in $otherPrereqs) {
         } elseif ($p.InstallUrl) {
             Write-Host (Format-Color -Text "  install: $($p.InstallUrl)" -Color DimGray -Enabled $colorOn)
         }
-        $summary.Warnings += @{ Name = $p.Name; Reason = 'missing' }
+        # Optional tool with a workaround → turtle (no rush). Otherwise install URL → owl (you should know).
+        $animal = if ($p.Workaround) { 'turtle' } else { 'owl' }
+        $fixCmd = if ($p.Workaround) { $p.Workaround } elseif ($p.InstallUrl) { $p.InstallUrl } else { "Install $($p.Name) from your platform's package manager" }
+        $summary.Warnings += @{
+            Name       = $p.Name
+            Reason     = 'missing'
+            Title      = "$($p.Name) is not installed"
+            FixCommand = $fixCmd
+            Animal     = $animal
+        }
     }
 }
 Write-Host ""
@@ -207,9 +222,20 @@ foreach ($repo in $repoData.repos) {
             Write-Host (Format-Color -Text "$($glyphs.Ok) scaffolded: $($env.Target)" -Color Green -Enabled $colorOn)
             Write-Host (Format-Color -Text "  fill in real secrets before using" -Color Yellow -Enabled $colorOn)
             $summary.EnvFiles += $env.Target
-            $summary.Warnings += @{ Name = $env.Target; Reason = 'fill-secrets' }
+            $summary.Warnings += @{
+                Name       = $env.Target
+                Reason     = 'fill-secrets'
+                Title      = "Fill in secrets in $($env.Target)"
+                FixCommand = "Edit $($env.Target) and replace placeholder values with real credentials (do not commit)"
+                Animal     = 'hedgehog'
+            }
         } catch {
             Write-Host (Format-Color -Text "$($glyphs.Fail) failed to scaffold $($env.Target): $_" -Color Red -Enabled $colorOn)
+            $summary.HardFails += @{
+                Title      = "Failed to scaffold env file: $($env.Target)"
+                FixCommand = "Manually copy $($env.Example) to $($env.Target)"
+                Animal     = 'hedgehog'
+            }
         }
     }
 }
@@ -225,7 +251,14 @@ foreach ($repo in $repoData.repos) {
         Write-Host (Format-Color -Text "$($glyphs.Ok) $($repo.name)" -Color Green -Enabled $colorOn)
     } else {
         Write-Host (Format-Color -Text "$($glyphs.Warn) $($repo.name) — expected files missing" -Color Yellow -Enabled $colorOn)
-        $summary.Warnings += @{ Name = $repo.name; Reason = 'structure-check' }
+        $expected = if ($repo.structureCheck) { $repo.structureCheck -join ', ' } else { '(check repos.psd1)' }
+        $summary.Warnings += @{
+            Name       = $repo.name
+            Reason     = 'structure-check'
+            Title      = "$($repo.name) is missing expected files"
+            FixCommand = "cd $parentDir/$($repo.name) && check that these files exist: $expected"
+            Animal     = 'raccoon'
+        }
     }
 }
 Write-Host ""
@@ -262,7 +295,34 @@ foreach ($f in $summary.HardFails) {
     Write-Host ""
 }
 
-# Next-steps reminder
+# Show ASCII art for each warning (full sprite + speech-box treatment)
+foreach ($w in $summary.Warnings) {
+    if (-not $w.Title) { continue }   # legacy/incomplete warnings — skip rendering
+    Write-Host (Format-AnimalErrorMoment -Animal $w.Animal -Message $w.Title -FixCommand $w.FixCommand -TermWidth $caps.Width -RootDir $scriptRoot -Glyphs $glyphs -Enabled $colorOn)
+    Write-Host ""
+}
+
+# --- Suggested next steps — consolidated, copy-pasteable ---
+$allActionable = @()
+$allActionable += $summary.HardFails
+$allActionable += ($summary.Warnings | Where-Object { $_.FixCommand })
+
+if ($allActionable.Count -gt 0) {
+    Write-Host (Format-Section -Title "Suggested next steps" -Glyphs $glyphs -Enabled $colorOn)
+    Write-Host (Format-Color -Text "Run these in order, then rerun ./bootstrap.ps1 to verify:" -Color Cyan -Enabled $colorOn)
+    Write-Host ""
+    $stepNum = 1
+    foreach ($item in $allActionable) {
+        $marker = if ($item -in $summary.HardFails) { $glyphs.Fail } else { $glyphs.Warn }
+        $color  = if ($item -in $summary.HardFails) { 'Red' } else { 'Yellow' }
+        Write-Host (Format-Color -Text ("  {0,2}. $marker  $($item.Title)" -f $stepNum) -Color $color -Enabled $colorOn)
+        Write-Host (Format-Color -Text "      $($item.FixCommand)" -Color DimGray -Enabled $colorOn)
+        Write-Host ""
+        $stepNum++
+    }
+}
+
+# Closing nudge
 $owlPhrase = Get-AnimalPhrase -Animal 'owl' -Situation 'pro-tip'
 Write-Host "🦉  $owlPhrase"
 
