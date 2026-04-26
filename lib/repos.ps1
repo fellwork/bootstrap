@@ -54,20 +54,20 @@ function Test-EnvFilesNeeded {
         [Parameter(Mandatory)][hashtable]$Repo,
         [Parameter(Mandatory)][string]$ParentDir
     )
-    $needed = @()
-    if (-not $Repo.envExamples) { return $needed }
+    $needed = [System.Collections.Generic.List[object]]::new()
+    if (-not $Repo.envExamples) { return , @($needed) }
     $repoPath = Join-Path $ParentDir $Repo.name
     foreach ($examplePath in $Repo.envExamples) {
         $examplFull = Join-Path $repoPath $examplePath
         $envFull = $examplFull -replace '\.env\.example$', '.env'
         if ((Test-Path $examplFull) -and -not (Test-Path $envFull)) {
-            $needed += @{
+            $needed.Add(@{
                 Example = $examplFull
                 Target  = $envFull
-            }
+            })
         }
     }
-    return $needed
+    return , @($needed)
 }
 
 function Invoke-EnvScaffold {
