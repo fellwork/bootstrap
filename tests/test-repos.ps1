@@ -17,7 +17,7 @@ function Assert-True($cond, $message) {
 # Get-RepoState: existing folder with matching origin
 $state = Get-RepoState -Name 'api' -ParentDir 'c:/git/fellwork' -ExpectedOrigin 'https://github.com/fellwork/api.git'
 Assert-Equal 'present-matching' $state.Status "api status when origin matches"
-Assert-Equal 'main' $state.Branch "api on main branch"
+Assert-True ($state.Branch.Length -gt 0) "api branch is non-empty (whatever the dev has checked out)"
 
 # Get-RepoState: nonexistent folder
 $state = Get-RepoState -Name 'totally-fake-repo' -ParentDir 'c:/git/fellwork' -ExpectedOrigin 'https://github.com/fellwork/totally-fake-repo.git'
