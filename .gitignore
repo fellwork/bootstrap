@@ -1,0 +1,14 @@
+# Wrangler artifacts
+.wrangler/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Sprite generation intermediates (PNG sources kept; conversion outputs not committed during dev iteration)
+animals/*.png.tmp
