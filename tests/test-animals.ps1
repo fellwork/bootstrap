@@ -48,6 +48,36 @@ Assert-Equal 'raccoon' $animal "config-mismatch maps to raccoon"
 $animal = Get-AnimalForErrorCategory -Category 'security'
 Assert-Equal 'hedgehog' $animal "security maps to hedgehog"
 
+
+# Sprite loading — write a synthetic sprite to a temp dir so the test doesn't
+# depend on real PNGs being generated yet.
+$tempRoot = Join-Path $env:TEMP "bootstrap-test-$(Get-Random)"
+New-Item -ItemType Directory -Path "$tempRoot/animals" -Force | Out-Null
+$spriteContent = @"
+# Stardew-style raccoon sprite — tier-3 half-block ANSI.
+# Test fixture
+# Generated: 2026-04-26
+
+`e[38;2;100;100;100m▀▀▀`e[0m
+`e[38;2;200;200;200m▀▀▀`e[0m
+"@
+Set-Content -Path "$tempRoot/animals/raccoon.ansi" -Value $spriteContent -Encoding UTF8
+
+$sprite = Read-AnimalSprite -Animal 'raccoon' -RootDir $tempRoot
+Assert-True ($sprite.Length -gt 10) "raccoon sprite has content"
+Assert-True (-not ($sprite -match "^#")) "sprite content has header stripped"
+
+# Sprite width detection
+$width = Get-SpriteWidth -Sprite $sprite
+Assert-True ($width -ge 3) "sprite width is at least 3 cells"
+
+# Failure for missing sprite
+$missing = Read-AnimalSprite -Animal 'nonexistent' -RootDir $tempRoot
+Assert-Equal "" $missing "missing sprite returns empty string"
+
+# Cleanup
+Remove-Item -Path $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+
 if ($failures -eq 0) {
     Write-Host "`nAll animal tests passed." -ForegroundColor Green
     exit 0
