@@ -1,6 +1,11 @@
 # End-to-end tests for bootstrap.ps1 — run the actual script and assert structural behavior.
 # Uses the real sibling repos at c:/git/fellwork/* (which all exist by design from
 # this session's setup work).
+#
+# NOTE: All invocations of bootstrap.ps1 here test the STREAMING renderer path.
+# When tools/derekh is present on the developer's machine, the derekh module is
+# temporarily hidden (derekh.psm1 renamed to .bak) so bootstrap falls through to
+# the streaming code. The rename is always restored in a finally block.
 
 $failures = 0
 function Assert-Equal($expected, $actual, $message) {
@@ -21,7 +26,30 @@ $bootstrapScript = Join-Path $bootstrapRoot "bootstrap.ps1"
 
 Assert-True (Test-Path $bootstrapScript) "bootstrap.ps1 exists at expected path"
 
+# ── Derekh module hide/restore helpers ────────────────────────────────────────
+# These tests exercise the streaming path. Temporarily rename derekh.psm1 so
+# bootstrap.ps1 falls through to the streaming renderer (same behavior as
+# pre-derekh). The rename is always restored in a finally block.
+$parentDir    = Split-Path -Parent $bootstrapRoot
+$derekhPsm1   = Join-Path $parentDir "tools/derekh/derekh.psm1"
+$derekhPsm1Bak = $derekhPsm1 + '.bak'
+
+function Hide-DerekhModule {
+    if ((Test-Path $derekhPsm1) -and -not (Test-Path $derekhPsm1Bak)) {
+        Rename-Item -Path $derekhPsm1 -NewName ($derekhPsm1Bak | Split-Path -Leaf) -ErrorAction Stop
+        return $true
+    }
+    return $false
+}
+
+function Restore-DerekhModule {
+    if (Test-Path $derekhPsm1Bak) {
+        Rename-Item -Path $derekhPsm1Bak -NewName ($derekhPsm1 | Split-Path -Leaf) -ErrorAction SilentlyContinue
+    }
+}
+
 # === T7-1: --help exits 0 with usage text ===
+# --help is handled before the derekh early-exit, so no module hide needed.
 $helpOutput = & pwsh -NoProfile -File $bootstrapScript -Help 2>&1 | Out-String
 $helpExit = $LASTEXITCODE
 Assert-Equal 0 $helpExit "--help: exit code 0"
@@ -33,17 +61,22 @@ Assert-True ($helpOutput.Contains("Exit codes")) "--help: documents exit codes"
 
 # === T7-2: Full run with NO_COLOR — exit code 0 or 1, all sections present ===
 # Use NO_COLOR env var to make output predictable for content-matching
-$envBackup = $env:NO_COLOR
-$env:NO_COLOR = "1"
+$didHide2 = Hide-DerekhModule
 try {
-    $fullOutput = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1 | Out-String
-    $fullExit = $LASTEXITCODE
-} finally {
-    if ($null -eq $envBackup) {
-        Remove-Item env:NO_COLOR -ErrorAction SilentlyContinue
-    } else {
-        $env:NO_COLOR = $envBackup
+    $envBackup = $env:NO_COLOR
+    $env:NO_COLOR = "1"
+    try {
+        $fullOutput = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1 | Out-String
+        $fullExit = $LASTEXITCODE
+    } finally {
+        if ($null -eq $envBackup) {
+            Remove-Item env:NO_COLOR -ErrorAction SilentlyContinue
+        } else {
+            $env:NO_COLOR = $envBackup
+        }
     }
+} finally {
+    if ($didHide2) { Restore-DerekhModule }
 }
 
 # Exit code: 0 if all clean, 1 if warnings only, 2 if hard fails
@@ -66,26 +99,31 @@ foreach ($section in $expectedSections) {
     Assert-True ($fullOutput.Contains($section)) "full run: section header '$section' present"
 }
 
-# All 7 expected repos appear in output (cloning section)
-$expectedRepos = @('api', 'web', 'ops', 'lint', 'scribe', 'shared-configs', 'tsconfig')
+# All 8 expected repos appear in output (cloning section)
+$expectedRepos = @('api', 'web', 'ops', 'lint', 'scribe', 'shared-configs', 'tsconfig', 'tools')
 foreach ($r in $expectedRepos) {
     Assert-True ($fullOutput.Contains($r)) "full run: repo name '$r' appears in output"
 }
 
 # === T7-3: Idempotency — semantic stability across two runs ===
-$envBackup2 = $env:NO_COLOR
-$env:NO_COLOR = "1"
+$didHide3 = Hide-DerekhModule
 try {
-    $run1 = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1 | Out-String
-    $exit1 = $LASTEXITCODE
-    $run2 = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1 | Out-String
-    $exit2 = $LASTEXITCODE
-} finally {
-    if ($null -eq $envBackup2) {
-        Remove-Item env:NO_COLOR -ErrorAction SilentlyContinue
-    } else {
-        $env:NO_COLOR = $envBackup2
+    $envBackup2 = $env:NO_COLOR
+    $env:NO_COLOR = "1"
+    try {
+        $run1 = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1 | Out-String
+        $exit1 = $LASTEXITCODE
+        $run2 = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1 | Out-String
+        $exit2 = $LASTEXITCODE
+    } finally {
+        if ($null -eq $envBackup2) {
+            Remove-Item env:NO_COLOR -ErrorAction SilentlyContinue
+        } else {
+            $env:NO_COLOR = $envBackup2
+        }
     }
+} finally {
+    if ($didHide3) { Restore-DerekhModule }
 }
 
 Assert-Equal $exit1 $exit2 "idempotency: same exit code across runs"
@@ -105,30 +143,40 @@ $failCount1 = ([regex]::Matches($run1, '\[!!\]')).Count
 $failCount2 = ([regex]::Matches($run2, '\[!!\]')).Count
 Assert-Equal $failCount1 $failCount2 "idempotency: same count of [!!] markers"
 
-# === T7-4: All 7 repos detected as already cloned ===
+# === T7-4: All 8 repos detected as already cloned ===
 Assert-True ($run1.Contains("already cloned, origin matches") -or $run1.Contains("already cloned")) "run1: at least one repo shown as already cloned"
 $alreadyClonedCount = ([regex]::Matches($run1, "already cloned")).Count
-Assert-Equal 7 $alreadyClonedCount "run1: all 7 repos shown as already cloned"
+Assert-Equal 8 $alreadyClonedCount "run1: all 8 repos shown as already cloned"
 
 # === T7-5: --no-color flag strips ANSI escape codes ===
-$noColorOutput = & pwsh -NoProfile -File $bootstrapScript -NoColor -Ascii 2>&1 | Out-String
-$noColorExit = $LASTEXITCODE
+$didHide5 = Hide-DerekhModule
+try {
+    $noColorOutput = & pwsh -NoProfile -File $bootstrapScript -NoColor -Ascii 2>&1 | Out-String
+    $noColorExit = $LASTEXITCODE
+} finally {
+    if ($didHide5) { Restore-DerekhModule }
+}
 Assert-True ($noColorExit -in @(0, 1, 2)) "--no-color: valid exit code"
 # No raw escape sequences should appear
 Assert-True (-not ($noColorOutput -match "`e\[")) "--no-color: zero ANSI escape sequences in output"
 
 # === T7-6: --ascii flag forces ASCII glyphs ===
 # With --ascii AND a UTF-8 console, the script must still use ASCII glyphs
-$envBackup3 = $env:NO_COLOR
-$env:NO_COLOR = "1"
+$didHide6 = Hide-DerekhModule
 try {
-    $asciiOutput = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1 | Out-String
-} finally {
-    if ($null -eq $envBackup3) {
-        Remove-Item env:NO_COLOR -ErrorAction SilentlyContinue
-    } else {
-        $env:NO_COLOR = $envBackup3
+    $envBackup3 = $env:NO_COLOR
+    $env:NO_COLOR = "1"
+    try {
+        $asciiOutput = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1 | Out-String
+    } finally {
+        if ($null -eq $envBackup3) {
+            Remove-Item env:NO_COLOR -ErrorAction SilentlyContinue
+        } else {
+            $env:NO_COLOR = $envBackup3
+        }
     }
+} finally {
+    if ($didHide6) { Restore-DerekhModule }
 }
 # Tree branches should be ASCII (+- not ├─, '- not └─)
 Assert-True ($asciiOutput.Contains("+-") -or $asciiOutput.Contains("'-")) "--ascii: ASCII tree branches present"
@@ -139,16 +187,21 @@ Assert-True ($run1.Contains("repos cloned and validated")) "run1: summary mentio
 
 # === T7-8: Performance — full run completes in reasonable time ===
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-$envBackup4 = $env:NO_COLOR
-$env:NO_COLOR = "1"
+$didHide8 = Hide-DerekhModule
 try {
-    $null = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1
-} finally {
-    if ($null -eq $envBackup4) {
-        Remove-Item env:NO_COLOR -ErrorAction SilentlyContinue
-    } else {
-        $env:NO_COLOR = $envBackup4
+    $envBackup4 = $env:NO_COLOR
+    $env:NO_COLOR = "1"
+    try {
+        $null = & pwsh -NoProfile -File $bootstrapScript -Ascii 2>&1
+    } finally {
+        if ($null -eq $envBackup4) {
+            Remove-Item env:NO_COLOR -ErrorAction SilentlyContinue
+        } else {
+            $env:NO_COLOR = $envBackup4
+        }
     }
+} finally {
+    if ($didHide8) { Restore-DerekhModule }
 }
 $sw.Stop()
 # Reasonable bound: should complete in under 60s on the all-clean path

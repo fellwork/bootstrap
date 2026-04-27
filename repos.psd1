@@ -60,5 +60,13 @@
             structureCheck = @()
             envExamples = @()
         }
+        @{
+            name        = 'tools'
+            org         = 'fellwork'
+            branch      = 'main'
+            description = 'Shared CLI tooling — Derekh TUI framework + future tools'
+            structureCheck = @('derekh/derekh.psd1')
+            envExamples = @()
+        }
     )
 }
