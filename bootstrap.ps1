@@ -9,11 +9,220 @@ param(
 $ErrorActionPreference = 'Stop'
 $scriptRoot = $PSScriptRoot
 
+# ── Derekh integration (subsequent runs only) ─────────────────────────────
+# On the first run, tools/ doesn't exist yet — bootstrap.ps1 uses its own
+# streaming renderer below. On subsequent runs, tools/ is cloned and this
+# block activates the Derekh TUI.
+$derekhModule = Join-Path (Split-Path -Parent $scriptRoot) "tools/derekh/derekh.psm1"
+$useDerekh = $false
+
+if (Test-Path $derekhModule) {
+    try {
+        Import-Module $derekhModule -Force -ErrorAction Stop
+        $useDerekh = $true
+    } catch {
+        Write-Warning "(Derekh module exists but failed to load: $_. Falling back to streaming renderer.)"
+    }
+}
+# ── End derekh detection ──────────────────────────────────────────────────
+
 # Source library files
 . "$scriptRoot/lib/ui.ps1"
 . "$scriptRoot/lib/animals.ps1"
 . "$scriptRoot/lib/prereqs.ps1"
 . "$scriptRoot/lib/repos.ps1"
+
+# ── Build-BootstrapPlan — maps existing phases to Derekh plan schema ──────
+# Called only when $useDerekh is $true. Defined here so lib functions are
+# available (dot-sourced above). Placed before $if ($Help) so the derekh
+# early-exit below can invoke it before any streaming output is produced.
+function Build-BootstrapPlan {
+    [CmdletBinding()]
+    param(
+        [string]$ScriptRoot,
+        [string]$ParentDir,
+        [bool]$NoColor,
+        [bool]$Ascii
+    )
+
+    $repoData = Import-PowerShellDataFile (Join-Path $ScriptRoot 'repos.psd1')
+
+    $plan = New-DhPlan -Title "Fellwork Bootstrap" -Subtitle (Get-Date -Format "HH:mm:ss") -Theme "twilight"
+
+    # ── Phase 1: Bootstrap prerequisites ─────────────────────────────────────
+    $plan = Add-DhSinglePhase -Plan $plan -Name "Bootstrap prerequisites" -Action {
+        $bootstrapPrereqs = @('git', 'proto')
+        $alerts = @()
+        $allOk = $true
+
+        foreach ($p in $bootstrapPrereqs) {
+            $r = Get-PrereqResult -Name $p -Required $true
+            if ($r.Status -eq 'present') {
+                $alerts += New-DhAlert -Severity 'info' -Message "$p $($r.Version)"
+            } else {
+                $allOk = $false
+                $alerts += New-DhAlert -Severity 'fail' `
+                    -Message "$p is required and not installed" `
+                    -FixCommand "Install: $($r.InstallUrl)"
+            }
+        }
+
+        if (-not $allOk) {
+            return New-DhResult -Success $false `
+                -Message "Bootstrap-time prereqs missing — cannot proceed" `
+                -Severity 'fail' `
+                -Animal 'octopus' `
+                -Alerts $alerts
+        }
+        return New-DhResult -Success $true -Message "Bootstrap prerequisites satisfied" -Alerts $alerts
+    }
+
+    # ── Phase 2: Clone repos ──────────────────────────────────────────────────
+    $plan = Add-DhLoopPhase -Plan $plan -Name "Cloning repositories" -Items $repoData.repos -Action {
+        param($repo)
+        $expectedOrigin = "https://github.com/$($repo.org)/$($repo.name).git"
+        $state = Get-RepoState -Name $repo.name -ParentDir $ParentDir -ExpectedOrigin $expectedOrigin
+
+        switch ($state.Status) {
+            'present-matching' {
+                return New-DhResult -Success $true `
+                    -Message "$($repo.name): already cloned, origin matches (branch: $($state.Branch))"
+            }
+            'present-mismatch' {
+                return New-DhResult -Success $false `
+                    -Message "$($repo.name): wrong origin — $($state.Origin)" `
+                    -Severity 'fail' `
+                    -FixCommand "cd $ParentDir/$($repo.name) && git remote set-url origin $expectedOrigin" `
+                    -Animal 'raccoon'
+            }
+            'present-not-git' {
+                return New-DhResult -Success $false `
+                    -Message "$($repo.name): directory exists but is not a git repo" `
+                    -Severity 'fail' `
+                    -FixCommand "Inspect $($state.Path) and resolve manually (back up & remove if appropriate, then rerun)" `
+                    -Animal 'raccoon'
+            }
+            'absent' {
+                $clone = Invoke-RepoClone -Name $repo.name -Org $repo.org -ParentDir $ParentDir
+                if ($clone.Success) {
+                    return New-DhResult -Success $true -Message "$($repo.name): cloned"
+                } else {
+                    return New-DhResult -Success $false `
+                        -Message "$($repo.name): git clone failed (exit $($clone.ExitCode))" `
+                        -Severity 'fail' `
+                        -FixCommand "Check network/auth, then rerun: git clone $expectedOrigin" `
+                        -Animal 'octopus'
+                }
+            }
+        }
+    }
+
+    # ── Phase 3: Proto install per repo ───────────────────────────────────────
+    # Filter to repos that were successfully cloned/verified.
+    $okRepos = $repoData.repos | Where-Object {
+        $repoPath = Join-Path $ParentDir $_.name
+        Test-Path $repoPath
+    }
+
+    $plan = Add-DhLoopPhase -Plan $plan -Name "Toolchain (proto install per repo)" -Items $okRepos -Action {
+        param($repo)
+        $repoPath = Join-Path $ParentDir $repo.name
+        $result = Invoke-ProtoInstall -RepoPath $repoPath
+
+        if ($result.Skipped) {
+            return New-DhResult -Success $true -Message "$($repo.name): no .prototools — skipped" -Severity 'info'
+        } elseif ($result.Success) {
+            return New-DhResult -Success $true -Message "$($repo.name): tools installed"
+        } else {
+            return New-DhResult -Success $false `
+                -Message "$($repo.name): proto install failed (exit $($result.ExitCode))" `
+                -Severity 'fail' `
+                -FixCommand "cd $repoPath && proto install" `
+                -Animal 'octopus'
+        }
+    }
+
+    # ── Phase 4: Other prerequisites ─────────────────────────────────────────
+    $plan = Add-DhSinglePhase -Plan $plan -Name "Other prerequisites" -Action {
+        $otherPrereqs = Get-AllPrereqs | Where-Object { $_.Name -notin @('git','proto','rustc','node','bun') }
+        $alerts = @()
+
+        foreach ($p in $otherPrereqs) {
+            if ($p.Status -eq 'present') {
+                $alerts += New-DhAlert -Severity 'info' -Message "$($p.Name) $($p.Version)"
+            } elseif ($p.Status -eq 'present-but-not-running') {
+                $alerts += New-DhAlert -Severity 'warning' `
+                    -Message "$($p.Name) is installed but its daemon isn't running" `
+                    -FixCommand (if ($p.Workaround) { $p.Workaround } else { "Start the $($p.Name) daemon (e.g. open Docker Desktop)" })
+            } else {
+                $fixCmd = if ($p.Workaround) { $p.Workaround } elseif ($p.InstallUrl) { $p.InstallUrl } else { "Install $($p.Name) from your platform's package manager" }
+                $alerts += New-DhAlert -Severity 'warning' `
+                    -Message "$($p.Name) is not installed" `
+                    -FixCommand $fixCmd
+            }
+        }
+
+        return New-DhResult -Success $true -Message "Other prerequisites checked" -Alerts $alerts
+    }
+
+    # ── Phase 5: Env scaffolding ──────────────────────────────────────────────
+    $reposNeedingEnv = $repoData.repos | Where-Object {
+        $repoPath = Join-Path $ParentDir $_.name
+        (Test-Path $repoPath) -and ((Test-EnvFilesNeeded -Repo $_ -ParentDir $ParentDir).Count -gt 0)
+    }
+
+    if ($reposNeedingEnv.Count -gt 0) {
+        $plan = Add-DhLoopPhase -Plan $plan -Name "Env files" -Items $reposNeedingEnv -Action {
+            param($repo)
+            $needed = Test-EnvFilesNeeded -Repo $repo -ParentDir $ParentDir
+            $alerts = @()
+            $anyFail = $false
+
+            foreach ($env in $needed) {
+                try {
+                    Invoke-EnvScaffold -EnvFile $env
+                    $alerts += New-DhAlert -Severity 'warning' `
+                        -Message "Scaffolded $($env.Target) — fill in real secrets before using" `
+                        -FixCommand "Edit $($env.Target) and replace placeholder values with real credentials (do not commit)"
+                } catch {
+                    $anyFail = $true
+                    $alerts += New-DhAlert -Severity 'fail' `
+                        -Message "Failed to scaffold $($env.Target): $_" `
+                        -FixCommand "Manually copy $($env.Example) to $($env.Target)"
+                }
+            }
+
+            if ($anyFail) {
+                return New-DhResult -Success $false `
+                    -Message "$($repo.name): env scaffolding had failures" `
+                    -Severity 'fail' `
+                    -Animal 'hedgehog' `
+                    -Alerts $alerts
+            }
+            return New-DhResult -Success $true -Message "$($repo.name): env files scaffolded" -Alerts $alerts
+        }
+    }
+
+    # ── Phase 6: Structure validation ─────────────────────────────────────────
+    $plan = Add-DhLoopPhase -Plan $plan -Name "Repo structure validation" -Items $okRepos -Action {
+        param($repo)
+        $valid = Test-RepoStructure -Repo $repo -ParentDir $ParentDir
+
+        if ($valid) {
+            return New-DhResult -Success $true -Message "$($repo.name): structure OK"
+        } else {
+            $expected = if ($repo.structureCheck) { $repo.structureCheck -join ', ' } else { '(check repos.psd1)' }
+            return New-DhResult -Success $false `
+                -Message "$($repo.name): expected files missing" `
+                -Severity 'warning' `
+                -FixCommand "cd $ParentDir/$($repo.name) && check that these files exist: $expected" `
+                -Animal 'raccoon'
+        }
+    }
+
+    return $plan
+}
+# ── End Build-BootstrapPlan ───────────────────────────────────────────────
 
 if ($Help) {
     Write-Host @"
@@ -36,6 +245,18 @@ Exit codes:
 "@
     exit 0
 }
+
+# ── Derekh early-exit (replaces streaming output for the entire run) ──────
+# Runs after --help so that -Help always works regardless of tools/ state.
+# Runs before streaming setup so no streaming output is emitted on the derekh path.
+if ($useDerekh) {
+    $parentDirForPlan = Split-Path -Parent $scriptRoot
+    $plan = Build-BootstrapPlan -ScriptRoot $scriptRoot -ParentDir $parentDirForPlan `
+                                -NoColor $NoColor.IsPresent -Ascii $Ascii.IsPresent
+    Invoke-DhPlan -Plan $plan
+    exit $LASTEXITCODE
+}
+# ── End derekh early-exit ─────────────────────────────────────────────────
 
 # Apply UI overrides
 Set-UiOverrides -NoColor $NoColor.IsPresent -Ascii $Ascii.IsPresent
