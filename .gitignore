@@ -12,3 +12,6 @@ Thumbs.db
 
 # Sprite generation intermediates (PNG sources kept; conversion outputs not committed during dev iteration)
 animals/*.png.tmp
+
+# Brainstorm visual companion sessions (mockups + state, not source-of-truth)
+.superpowers/

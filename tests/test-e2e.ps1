@@ -66,8 +66,8 @@ foreach ($section in $expectedSections) {
     Assert-True ($fullOutput.Contains($section)) "full run: section header '$section' present"
 }
 
-# All 7 expected repos appear in output (cloning section)
-$expectedRepos = @('api', 'web', 'ops', 'lint', 'scribe', 'shared-configs', 'tsconfig')
+# All 8 expected repos appear in output (cloning section)
+$expectedRepos = @('api', 'web', 'ops', 'lint', 'scribe', 'shared-configs', 'tsconfig', 'tools')
 foreach ($r in $expectedRepos) {
     Assert-True ($fullOutput.Contains($r)) "full run: repo name '$r' appears in output"
 }
@@ -108,7 +108,7 @@ Assert-Equal $failCount1 $failCount2 "idempotency: same count of [!!] markers"
 # === T7-4: All 7 repos detected as already cloned ===
 Assert-True ($run1.Contains("already cloned, origin matches") -or $run1.Contains("already cloned")) "run1: at least one repo shown as already cloned"
 $alreadyClonedCount = ([regex]::Matches($run1, "already cloned")).Count
-Assert-Equal 7 $alreadyClonedCount "run1: all 7 repos shown as already cloned"
+Assert-Equal 8 $alreadyClonedCount "run1: all 8 repos shown as already cloned"
 
 # === T7-5: --no-color flag strips ANSI escape codes ===
 $noColorOutput = & pwsh -NoProfile -File $bootstrapScript -NoColor -Ascii 2>&1 | Out-String
