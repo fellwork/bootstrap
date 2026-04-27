@@ -3,7 +3,10 @@
 param(
     [switch]$Help,
     [switch]$NoColor,
-    [switch]$Ascii
+    [switch]$Ascii,
+    # Passed through to Invoke-DhPlan when derekh is active: emit JSON to stdout
+    # instead of TUI/streaming output. Used by test-derekh-integration.ps1 and CI.
+    [switch]$Headless
 )
 
 $ErrorActionPreference = 'Stop'
@@ -253,7 +256,11 @@ if ($useDerekh) {
     $parentDirForPlan = Split-Path -Parent $scriptRoot
     $plan = Build-BootstrapPlan -ScriptRoot $scriptRoot -ParentDir $parentDirForPlan `
                                 -NoColor $NoColor.IsPresent -Ascii $Ascii.IsPresent
-    Invoke-DhPlan -Plan $plan
+    if ($Headless.IsPresent) {
+        Invoke-DhPlan -Plan $plan -Headless
+    } else {
+        Invoke-DhPlan -Plan $plan
+    }
     exit $LASTEXITCODE
 }
 # ── End derekh early-exit ─────────────────────────────────────────────────
