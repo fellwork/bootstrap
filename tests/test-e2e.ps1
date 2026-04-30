@@ -3,8 +3,8 @@
 # this session's setup work).
 #
 # NOTE: All invocations of bootstrap.ps1 here test the STREAMING renderer path.
-# When tools/derekh is present on the developer's machine, the derekh module is
-# temporarily hidden (derekh.psm1 renamed to .bak) so bootstrap falls through to
+# When tools/guide is present on the developer's machine, the guide module is
+# temporarily hidden (guide.psm1 renamed to .bak) so bootstrap falls through to
 # the streaming code. The rename is always restored in a finally block.
 
 $failures = 0
@@ -26,30 +26,30 @@ $bootstrapScript = Join-Path $bootstrapRoot "bootstrap.ps1"
 
 Assert-True (Test-Path $bootstrapScript) "bootstrap.ps1 exists at expected path"
 
-# ── Derekh module hide/restore helpers ────────────────────────────────────────
-# These tests exercise the streaming path. Temporarily rename derekh.psm1 so
+# ── Guide module hide/restore helpers ────────────────────────────────────────
+# These tests exercise the streaming path. Temporarily rename guide.psm1 so
 # bootstrap.ps1 falls through to the streaming renderer (same behavior as
-# pre-derekh). The rename is always restored in a finally block.
+# pre-guide). The rename is always restored in a finally block.
 $parentDir    = Split-Path -Parent $bootstrapRoot
-$derekhPsm1   = Join-Path $parentDir "tools/derekh/derekh.psm1"
-$derekhPsm1Bak = $derekhPsm1 + '.bak'
+$guidePsm1   = Join-Path $parentDir "tools/guide/guide.psm1"
+$guidePsm1Bak = $guidePsm1 + '.bak'
 
-function Hide-DerekhModule {
-    if ((Test-Path $derekhPsm1) -and -not (Test-Path $derekhPsm1Bak)) {
-        Rename-Item -Path $derekhPsm1 -NewName ($derekhPsm1Bak | Split-Path -Leaf) -ErrorAction Stop
+function Hide-GuideModule {
+    if ((Test-Path $guidePsm1) -and -not (Test-Path $guidePsm1Bak)) {
+        Rename-Item -Path $guidePsm1 -NewName ($guidePsm1Bak | Split-Path -Leaf) -ErrorAction Stop
         return $true
     }
     return $false
 }
 
-function Restore-DerekhModule {
-    if (Test-Path $derekhPsm1Bak) {
-        Rename-Item -Path $derekhPsm1Bak -NewName ($derekhPsm1 | Split-Path -Leaf) -ErrorAction SilentlyContinue
+function Restore-GuideModule {
+    if (Test-Path $guidePsm1Bak) {
+        Rename-Item -Path $guidePsm1Bak -NewName ($guidePsm1 | Split-Path -Leaf) -ErrorAction SilentlyContinue
     }
 }
 
 # === T7-1: --help exits 0 with usage text ===
-# --help is handled before the derekh early-exit, so no module hide needed.
+# --help is handled before the guide early-exit, so no module hide needed.
 $helpOutput = & pwsh -NoProfile -File $bootstrapScript -Help 2>&1 | Out-String
 $helpExit = $LASTEXITCODE
 Assert-Equal 0 $helpExit "--help: exit code 0"
@@ -61,7 +61,7 @@ Assert-True ($helpOutput.Contains("Exit codes")) "--help: documents exit codes"
 
 # === T7-2: Full run with NO_COLOR — exit code 0 or 1, all sections present ===
 # Use NO_COLOR env var to make output predictable for content-matching
-$didHide2 = Hide-DerekhModule
+$didHide2 = Hide-GuideModule
 try {
     $envBackup = $env:NO_COLOR
     $env:NO_COLOR = "1"
@@ -76,7 +76,7 @@ try {
         }
     }
 } finally {
-    if ($didHide2) { Restore-DerekhModule }
+    if ($didHide2) { Restore-GuideModule }
 }
 
 # Exit code: 0 if all clean, 1 if warnings only, 2 if hard fails
@@ -106,7 +106,7 @@ foreach ($r in $expectedRepos) {
 }
 
 # === T7-3: Idempotency — semantic stability across two runs ===
-$didHide3 = Hide-DerekhModule
+$didHide3 = Hide-GuideModule
 try {
     $envBackup2 = $env:NO_COLOR
     $env:NO_COLOR = "1"
@@ -123,7 +123,7 @@ try {
         }
     }
 } finally {
-    if ($didHide3) { Restore-DerekhModule }
+    if ($didHide3) { Restore-GuideModule }
 }
 
 Assert-Equal $exit1 $exit2 "idempotency: same exit code across runs"
@@ -149,12 +149,12 @@ $alreadyClonedCount = ([regex]::Matches($run1, "already cloned")).Count
 Assert-Equal 8 $alreadyClonedCount "run1: all 8 repos shown as already cloned"
 
 # === T7-5: --no-color flag strips ANSI escape codes ===
-$didHide5 = Hide-DerekhModule
+$didHide5 = Hide-GuideModule
 try {
     $noColorOutput = & pwsh -NoProfile -File $bootstrapScript -NoColor -Ascii 2>&1 | Out-String
     $noColorExit = $LASTEXITCODE
 } finally {
-    if ($didHide5) { Restore-DerekhModule }
+    if ($didHide5) { Restore-GuideModule }
 }
 Assert-True ($noColorExit -in @(0, 1, 2)) "--no-color: valid exit code"
 # No raw escape sequences should appear
@@ -162,7 +162,7 @@ Assert-True (-not ($noColorOutput -match "`e\[")) "--no-color: zero ANSI escape 
 
 # === T7-6: --ascii flag forces ASCII glyphs ===
 # With --ascii AND a UTF-8 console, the script must still use ASCII glyphs
-$didHide6 = Hide-DerekhModule
+$didHide6 = Hide-GuideModule
 try {
     $envBackup3 = $env:NO_COLOR
     $env:NO_COLOR = "1"
@@ -176,7 +176,7 @@ try {
         }
     }
 } finally {
-    if ($didHide6) { Restore-DerekhModule }
+    if ($didHide6) { Restore-GuideModule }
 }
 # Tree branches should be ASCII (+- not ├─, '- not └─)
 Assert-True ($asciiOutput.Contains("+-") -or $asciiOutput.Contains("'-")) "--ascii: ASCII tree branches present"
@@ -187,7 +187,7 @@ Assert-True ($run1.Contains("repos cloned and validated")) "run1: summary mentio
 
 # === T7-8: Performance — full run completes in reasonable time ===
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
-$didHide8 = Hide-DerekhModule
+$didHide8 = Hide-GuideModule
 try {
     $envBackup4 = $env:NO_COLOR
     $env:NO_COLOR = "1"
@@ -201,7 +201,7 @@ try {
         }
     }
 } finally {
-    if ($didHide8) { Restore-DerekhModule }
+    if ($didHide8) { Restore-GuideModule }
 }
 $sw.Stop()
 # Reasonable bound: should complete in under 60s on the all-clean path

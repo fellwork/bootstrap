@@ -1,8 +1,8 @@
 #Requires -Version 7
-# test-derekh-integration.ps1
+# test-guide-integration.ps1
 #
 # E2E tests for the dual code path added by Phase H:
-#   Scenario 1: tools/ present -> derekh path runs (headless mode for determinism)
+#   Scenario 1: tools/ present -> guide path runs (headless mode for determinism)
 #   Scenario 2: tools/ absent  -> fallback streaming renderer runs unchanged
 #
 # PASS:/FAIL: prefix protocol for run-all.ps1.
@@ -44,29 +44,29 @@ function Skip-Pass {
 $bootstrapRoot   = Resolve-Path "$PSScriptRoot/.."
 $bootstrapScript = Join-Path $bootstrapRoot "bootstrap.ps1"
 $parentDir       = Split-Path -Parent $bootstrapRoot
-$derekhPsm1      = Join-Path $parentDir "tools/derekh/derekh.psm1"
-$derekhPsd1      = Join-Path $parentDir "tools/derekh/derekh.psd1"
+$guidePsm1      = Join-Path $parentDir "tools/guide/guide.psm1"
+$guidePsd1      = Join-Path $parentDir "tools/guide/guide.psd1"
 
 Assert-True 'bootstrap.ps1 exists' (Test-Path $bootstrapScript)
 
 # ===============================================================================
-# Scenario 1 -- Derekh path (headless mode)
-# Requires: tools/ cloned AND derekh Phases A-F complete (Invoke-DhPlan works)
+# Scenario 1 -- Guide path (headless mode)
+# Requires: tools/ cloned AND guide Phases A-F complete (Invoke-GuidePlan works)
 #
-# IMPORTANT: Invoke-DhPlan -Headless calls exit() internally. All invocations
+# IMPORTANT: Invoke-GuidePlan -Headless calls exit() internally. All invocations
 # that use it must run in a subprocess (pwsh -NoProfile -File ...) to avoid
 # terminating the test runner.
 # ===============================================================================
 Write-Host ""
-Write-Host "--- Scenario 1: derekh path (headless) ---"
+Write-Host "--- Scenario 1: guide path (headless) ---"
 
-$derekhAvailable = (Test-Path $derekhPsm1) -and (Test-Path $derekhPsd1)
+$guideAvailable = (Test-Path $guidePsm1) -and (Test-Path $guidePsd1)
 
-if (-not $derekhAvailable) {
+if (-not $guideAvailable) {
     # tools/ not cloned yet -- skip gracefully without failing the suite
-    Skip-Pass 'S1: derekh module present (skipped -- tools/ not cloned)'
-    Skip-Pass 'S1: derekh module loads without error (skipped)'
-    Skip-Pass 'S1: Invoke-DhPlan implemented (skipped)'
+    Skip-Pass 'S1: guide module present (skipped -- tools/ not cloned)'
+    Skip-Pass 'S1: guide module loads without error (skipped)'
+    Skip-Pass 'S1: Invoke-GuidePlan implemented (skipped)'
     Skip-Pass 'S1: headless JSON exit_code in {0,1,2} (skipped)'
     Skip-Pass 'S1: headless output is valid JSON (skipped)'
     Skip-Pass 'S1: headless JSON has exit_code field (skipped)'
@@ -79,27 +79,27 @@ if (-not $derekhAvailable) {
     Skip-Pass "S1: headless JSON contains phase 'Repo structure validation' (skipped)"
     Skip-Pass 'S1: headless exit code matches streaming exit code (skipped)'
 } else {
-    Assert-True 'S1: derekh module present' $true ''
+    Assert-True 'S1: guide module present' $true ''
 
     # Verify the module imports cleanly in a subprocess.
     # Redirect all streams (2>&1 and 3>&1) to capture warnings that would otherwise
     # appear in stdout on some PowerShell builds. We just want the exit code.
     $importScript = @"
-Import-Module '$derekhPsd1' -Force -ErrorAction Stop 3>`$null
+Import-Module '$guidePsd1' -Force -ErrorAction Stop 3>`$null
 Write-Output 'imported'
 "@
     $importOut = & pwsh -NoProfile -Command $importScript 2>$null 3>$null | Out-String
     $importOk = ($importOut -match 'imported')
-    Assert-True 'S1: derekh module loads without error' $importOk "Got: $($importOut.Trim())"
+    Assert-True 'S1: guide module loads without error' $importOk "Got: $($importOut.Trim())"
 
-    # Check whether Invoke-DhPlan is fully implemented using a probe subprocess.
-    # Invoke-DhPlan -Headless calls exit() internally, so it must run in a child process.
+    # Check whether Invoke-GuidePlan is fully implemented using a probe subprocess.
+    # Invoke-GuidePlan -Headless calls exit() internally, so it must run in a child process.
     # Suppress all warning/info streams so only JSON goes to stdout.
     $probeScript = @"
-Import-Module '$derekhPsd1' -Force -ErrorAction Stop 3>`$null
-`$plan = New-DhPlan -Title 'Test' -Subtitle 'test'
-`$plan = Add-DhSinglePhase -Plan `$plan -Name 'noop' -Action { return New-DhResult -Success `$true -Message 'ok' }
-Invoke-DhPlan -Plan `$plan -Headless
+Import-Module '$guidePsd1' -Force -ErrorAction Stop 3>`$null
+`$plan = New-GuidePlan -Title 'Test' -Subtitle 'test'
+`$plan = Add-GuideSinglePhase -Plan `$plan -Name 'noop' -Action { return New-GuideResult -Success `$true -Message 'ok' }
+Invoke-GuidePlan -Plan `$plan -Headless
 "@
     $probeOut = & pwsh -NoProfile -Command $probeScript 2>$null 3>$null | Out-String
     $probeExit = $LASTEXITCODE
@@ -111,7 +111,7 @@ Invoke-DhPlan -Plan `$plan -Headless
     $planImplemented = $planImplemented -and ($null -ne $probeParsed)
 
     if (-not $planImplemented) {
-        Skip-Pass 'S1: Invoke-DhPlan implemented (skipped -- stubs or error)'
+        Skip-Pass 'S1: Invoke-GuidePlan implemented (skipped -- stubs or error)'
         Skip-Pass 'S1: headless JSON exit_code in {0,1,2} (skipped)'
         Skip-Pass 'S1: headless output is valid JSON (skipped)'
         Skip-Pass 'S1: headless JSON has exit_code field (skipped)'
@@ -124,10 +124,10 @@ Invoke-DhPlan -Plan `$plan -Headless
         Skip-Pass "S1: headless JSON contains phase 'Repo structure validation' (skipped)"
         Skip-Pass 'S1: headless exit code matches streaming exit code (skipped)'
     } else {
-        Assert-True 'S1: Invoke-DhPlan implemented' $true ''
+        Assert-True 'S1: Invoke-GuidePlan implemented' $true ''
 
-        # Run bootstrap with -Headless flag so Invoke-DhPlan emits JSON to stdout.
-        # The -Headless flag is passed through to Invoke-DhPlan inside bootstrap.ps1.
+        # Run bootstrap with -Headless flag so Invoke-GuidePlan emits JSON to stdout.
+        # The -Headless flag is passed through to Invoke-GuidePlan inside bootstrap.ps1.
         # NO_COLOR=1 keeps output clean; capture to temp file gives clean line capture.
         $headlessEnvBackup = $env:NO_COLOR
         $env:NO_COLOR = '1'
@@ -191,13 +191,13 @@ Invoke-DhPlan -Plan `$plan -Headless
 
             # Both the headless and streaming paths must report the same success/fail class
             # (0=clean, 1=warnings, 2=hard fails). The exact code may differ because
-            # the derekh path may classify some results differently (e.g. structure check
-            # warnings vs. fails). We verify the derekh path exits in {0,1,2} (already
+            # the guide path may classify some results differently (e.g. structure check
+            # warnings vs. fails). We verify the guide path exits in {0,1,2} (already
             # asserted above) and run one more streaming check to confirm idempotency.
-            $derekhPsm1BakCmp = $derekhPsm1 + '.bak'
+            $guidePsm1BakCmp = $guidePsm1 + '.bak'
             $didRenameCmp = $false
-            if (Test-Path $derekhPsm1) {
-                Rename-Item -Path $derekhPsm1 -NewName ($derekhPsm1BakCmp | Split-Path -Leaf) -ErrorAction Stop
+            if (Test-Path $guidePsm1) {
+                Rename-Item -Path $guidePsm1 -NewName ($guidePsm1BakCmp | Split-Path -Leaf) -ErrorAction Stop
                 $didRenameCmp = $true
             }
             try {
@@ -211,8 +211,8 @@ Invoke-DhPlan -Plan `$plan -Headless
                     else { $env:NO_COLOR = $streamEnvBackup }
                 }
             } finally {
-                if ($didRenameCmp -and (Test-Path $derekhPsm1BakCmp)) {
-                    Rename-Item -Path $derekhPsm1BakCmp -NewName ($derekhPsm1 | Split-Path -Leaf) -ErrorAction SilentlyContinue
+                if ($didRenameCmp -and (Test-Path $guidePsm1BakCmp)) {
+                    Rename-Item -Path $guidePsm1BakCmp -NewName ($guidePsm1 | Split-Path -Leaf) -ErrorAction SilentlyContinue
                 }
             }
             # Both paths must be in {0,1,2}; neither must hard-fail when the other succeeds
@@ -227,18 +227,18 @@ Invoke-DhPlan -Plan `$plan -Headless
 
 # ===============================================================================
 # Scenario 2 -- Fallback streaming path
-# Simulate tools/ absent by temporarily renaming derekh.psm1, then assert
+# Simulate tools/ absent by temporarily renaming guide.psm1, then assert
 # bootstrap streaming renderer runs unmodified.
 # ===============================================================================
 Write-Host ""
 Write-Host "--- Scenario 2: fallback streaming path ---"
 
-$derekhPsm1Bak = $derekhPsm1 + '.bak'
+$guidePsm1Bak = $guidePsm1 + '.bak'
 
-# Rename psm1 if it exists (so Test-Path $derekhPsm1 returns $false inside bootstrap)
+# Rename psm1 if it exists (so Test-Path $guidePsm1 returns $false inside bootstrap)
 $didRename = $false
-if (Test-Path $derekhPsm1) {
-    Rename-Item -Path $derekhPsm1 -NewName ($derekhPsm1Bak | Split-Path -Leaf) -ErrorAction Stop
+if (Test-Path $guidePsm1) {
+    Rename-Item -Path $guidePsm1 -NewName ($guidePsm1Bak | Split-Path -Leaf) -ErrorAction Stop
     $didRename = $true
 }
 
@@ -269,13 +269,13 @@ try {
         Assert-True "S2: fallback streaming has section '$section'" ($streamingOutput.Contains($section)) ''
     }
 
-    # Confirm no derekh JSON leaked into streaming output
-    Assert-True 'S2: derekh TUI NOT active (no JSON object in stdout)' (-not ($streamingOutput.TrimStart().StartsWith('{'))) ''
+    # Confirm no guide JSON leaked into streaming output
+    Assert-True 'S2: guide TUI NOT active (no JSON object in stdout)' (-not ($streamingOutput.TrimStart().StartsWith('{'))) ''
 
 } finally {
     # Always restore the renamed psm1 so we leave the workspace clean
-    if ($didRename -and (Test-Path $derekhPsm1Bak)) {
-        Rename-Item -Path $derekhPsm1Bak -NewName ($derekhPsm1 | Split-Path -Leaf) -ErrorAction SilentlyContinue
+    if ($didRename -and (Test-Path $guidePsm1Bak)) {
+        Rename-Item -Path $guidePsm1Bak -NewName ($guidePsm1 | Split-Path -Leaf) -ErrorAction SilentlyContinue
     }
 }
 
@@ -283,6 +283,6 @@ try {
 # Summary
 # ===============================================================================
 Write-Host ""
-Write-Host "Derekh integration: $passes pass, $failures fail"
+Write-Host "Guide integration: $passes pass, $failures fail"
 
 if ($failures -gt 0) { exit 1 } else { exit 0 }

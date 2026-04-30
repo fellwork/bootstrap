@@ -64,8 +64,8 @@
             name        = 'tools'
             org         = 'fellwork'
             branch      = 'main'
-            description = 'Shared CLI tooling — Derekh TUI framework + future tools'
-            structureCheck = @('derekh/derekh.psd1')
+            description = 'Shared CLI tooling — Guide TUI framework + future tools'
+            structureCheck = @('guide/guide.psd1')
             envExamples = @()
         }
     )
