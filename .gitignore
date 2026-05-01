@@ -15,3 +15,4 @@ animals/*.png.tmp
 
 # Brainstorm visual companion sessions (mockups + state, not source-of-truth)
 .superpowers/
+AGENTS.local.db
